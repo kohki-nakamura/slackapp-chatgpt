@@ -2,13 +2,15 @@ import os
 import re
 import time
 from typing import Any
+from datetime import timedelta
 
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from langchain.chat_models import ChatOpenAI
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain.schema import LLMResult
+from langchain.memory import MomentoChatMessageHistory
+from langchain.schema import HumanMessage, LLMResult, SystemMessage
 
 CHAT_UPDATE_INTERVAL_SEC = 1
 
@@ -48,8 +50,25 @@ def handle_mention(event, say):
     thread_ts = event["ts"]
     message = re.sub("<@.*?>", "", event["text"])
 
+    # 投稿のキー(=Momentoキー):初回=event["ts"],2回目以降=event["thread_ts"]
+    id_ts = event["ts"]
+    if "thread_ts" in event:
+        id_ts = event["thread_ts"]
+
     result = say("\n\nTyping...", thread_ts=thread_ts)
     ts = result["ts"]
+
+    history = MomentoChatMessageHistory.from_client_params(
+        id_ts,
+        os.environ.get("MOMENTO_CACHE"),
+        timedelta(hours=int(os.environ.get("MOMENTO_TTL"))),
+    )
+
+    messages = [SystemMessage(content="You are a good assistant.")]
+    messages.extend(history.messages)
+    messages.append(HumanMessage(content=message))
+
+    history.add_user_message(message)
 
     callback = SlackStreamingCallbackHandler(channel=channel, ts=ts)
     llm = ChatOpenAI(
@@ -59,7 +78,8 @@ def handle_mention(event, say):
         callbacks=[callback],
     )
 
-    llm.predict(message)
+    ai_message = llm(messages)
+    history.add_message(ai_message)
 
 # ソケットモードハンドラーを使ってアプリを起動します
 if __name__ == "__main__":
