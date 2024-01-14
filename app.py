@@ -1,3 +1,5 @@
+import json
+import logging
 import os
 import re
 import time
@@ -7,6 +9,7 @@ from datetime import timedelta
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_bolt.adapter.aws_lambda import SlackRequestHandler
 from langchain.chat_models import ChatOpenAI
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.memory import MomentoChatMessageHistory
@@ -15,6 +18,13 @@ from langchain.schema import HumanMessage, LLMResult, SystemMessage
 CHAT_UPDATE_INTERVAL_SEC = 1
 
 load_dotenv()
+
+# ログ
+SlackRequestHandler.clear_all_log_handlers()
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # ボットトークンとソケットモードハンドラーを使ってアプリを初期化します
 app = App(
@@ -89,3 +99,13 @@ app.event("app_mention")(ack=just_ack, lazy=[handle_mention])
 # ソケットモードハンドラーを使ってアプリを起動します
 if __name__ == "__main__":
     SocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN")).start()
+
+def handler(event, context):
+    logger.info("handler called")
+    header = event["headers"]
+    logger.info(json.dumps(header))
+
+    if "x-slack-retry-num" in header:
+        slack_handler = SlackRequestHandler(app=app)
+        # 応答はそのまま AWS Lambda の戻り値として返せます
+        return slack_handler.handle(event, context)
