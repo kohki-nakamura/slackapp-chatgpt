@@ -44,7 +44,7 @@ class SlackStreamingCallbackHandler(BaseCallbackHandler):
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> Any:
         app.client.chat_update(channel=self.channel, ts=self.ts, text=self.message)
 
-@app.event("app_mention")
+# @app.event("app_mention")
 def handle_mention(event, say):
     channel = event["channel"]
     thread_ts = event["ts"]
@@ -80,6 +80,11 @@ def handle_mention(event, say):
 
     ai_message = llm(messages)
     history.add_message(ai_message)
+
+def just_ack(ack):
+    ack()
+
+app.event("app_mention")(ack=just_ack, lazy=[handle_mention])
 
 # ソケットモードハンドラーを使ってアプリを起動します
 if __name__ == "__main__":
